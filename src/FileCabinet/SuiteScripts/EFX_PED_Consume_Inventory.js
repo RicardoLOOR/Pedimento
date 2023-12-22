@@ -45,25 +45,24 @@ define(['N/record', 'N/search'],
          */
         const afterSubmit = (scriptContext) => {
             try {
-                if (scriptContext.type == scriptContext.UserEventType.EDIT || scriptContext.type == scriptContext.UserEventType.CREATE) {
-                    var record_now = scriptContext.newRecord;
-                    var recType = record_now.type;
 
-                    if (recType == record.Type.INVENTORY_ADJUSTMENT || recType == record.Type.INVOICE || recType == record.Type.VENDOR_CREDIT || recType == record.Type.CASH_SALE) {
+                var record_now = scriptContext.newRecord;
+                var recType = record_now.type;
 
+                switch (scriptContext.type) {
+                    case scriptContext.UserEventType.EDIT:
+                        break;
+                    case scriptContext.UserEventType.CREATE:
                         var sublista = '';
                         var campo_rate = '';
                         var campo_cantidad = '';
 
-                        if (recType == record.Type.INVOICE || recType == record.Type.VENDOR_CREDIT || recType == record.Type.CASH_SALE) {
+                        if (recType == record.Type.ITEM_FULFILLMENT || recType == record.Type.VENDOR_CREDIT || recType == record.Type.CASH_SALE) {
                             sublista = 'item';
                             campo_cantidad = 'quantity';
                             campo_rate = 'rate';
 
-                            var record_obj = record.load({
-                                type:recType,
-                                id:record_now.id
-                            });
+                            var record_obj = record.load({ type: recType, id: record_now.id });
                         }
 
                         if (recType == record.Type.INVENTORY_ADJUSTMENT) {
@@ -71,658 +70,387 @@ define(['N/record', 'N/search'],
                             campo_cantidad = 'adjustqtyby';
                             campo_rate = 'unitcost';
 
-                            var record_obj = record.load({
-                                type:recType,
-                                id:record_now.id
-                            });
+                            var record_obj = record.load({ type: recType, id: record_now.id });
                         }
-                        var conteoLine = record_obj.getLineCount({sublistId: sublista});
-                        log.audit({title: 'conteoLine', details: conteoLine});
-                        
+                        var conteoLine = record_obj.getLineCount({ sublistId: sublista });
+                        log.audit({ title: 'conteoLine', details: conteoLine });
+
                         var listaensa = [];
+                        var arrIdLotSerie = []
                         var arrayPedimento = new Array();
                         for (var i = 0; i < conteoLine; i++) {
-                            var objPedimento = {
+                            var pedimentoObj = {
                                 pedimento: '',
                                 cantidad: '',
                                 item: '',
                                 linea: '',
-                                ubicacion:'',
-                                rate:''
+                                ubicacion: '',
+                                rate: ''
                             }
-                            var tipoItem = record_now.getSublistValue({sublistId: sublista,fieldId: 'itemtype',line:i}) || '';
-                            var ItemIdAssembly = record_now.getSublistValue({
-                                sublistId: sublista,
-                                fieldId: 'item',
-                                line: i
-                            }) || '';
-                            log.audit({title:'ItemIdAssembly',details:ItemIdAssembly});
-                            log.audit({title:'tipoItem',details:tipoItem});
-                            if(tipoItem=='Assembly'){
-                                var assamblyload = record.load({
-                                    type: 'assemblyitem',
-                                    id: ItemIdAssembly,
-                                    isDynamic: true,
-                                });
+                            var tipoItem = record_obj.getSublistValue({ sublistId: sublista, fieldId: 'itemtype', line: i }) || '';
+                            var ItemIdAssembly = record_obj.getSublistValue({ sublistId: sublista, fieldId: 'item', line: i }) || '';
+                            log.audit({ title: 'ItemIdAssembly', details: ItemIdAssembly });
+                            log.audit({ title: 'tipoItem', details: tipoItem });
 
-                                var invAssLineCount2 = assamblyload.getLineCount({
-                                    sublistId: 'billofmaterials'
-                                });
+                            var contiene_pedimento = record_obj.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_contains', line: i }) || false;
+                            if (tipoItem === 'InvtPart' && contiene_pedimento) {
+                                log.debug({ title: 'Obtiene todos los articulo cuyo tipo es de inventario', details: '🟢' });
+                                pedimentoObj.item = record_obj.getSublistValue({ sublistId: sublista, fieldId: 'item', line: i }) || 0;
+                                pedimentoObj.rate = record_obj.getSublistValue({ sublistId: sublista, fieldId: campo_rate, line: i }) || 0;
+                                pedimentoObj.ubicacion = record_obj.getSublistValue({ sublistId: sublista, fieldId: 'location', line: i }) || 0;
 
-                                log.audit({title:'invAssLineCount2',details:invAssLineCount2});
-                                for(var iteraciones = 0 ; iteraciones<invAssLineCount2; iteraciones++){
+                                var inventoryDetail = record_now.getSublistSubrecord({ sublistId: sublista, fieldId: 'inventorydetail', line: i });
+                                var countInventoryDetail = inventoryDetail.getLineCount({ sublistId: 'inventoryassignment' });
 
-                                    var masterT = assamblyload.getSublistValue({
-                                        sublistId: 'billofmaterials',
-                                        fieldId: 'masterdefault',
-                                        line: iteraciones
-                                    });
+                                var arrInvDetail = []
+                                for (let indexInvDet = 0; indexInvDet < countInventoryDetail; indexInvDet++) {
+                                    log.debug({ title: 'inventoryDetail', details: inventoryDetail });
+                                    var invDetNumId = inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'inventorydetail', line: indexInvDet })
+                                    var serialLotId = parseInt(inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'issueinventorynumber', line: indexInvDet }))
+                                    var invDetQty = inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'quantity', line: indexInvDet })
 
-                                    if(masterT == true){
-                                        log.audit({title:'masterT',details:masterT});
-                                        listaensa.push(assamblyload.getSublistValue({
-                                            sublistId: 'billofmaterials',
-                                            fieldId: 'billofmaterials',
-                                            line: iteraciones
-                                        })) ;
+                                    arrInvDetail.push({ invDetNumId, serialLotId, invDetQty })
+                                }
+                                log.audit({ title: 'Data to Inventory Detail:', details: arrInvDetail });
+                                if (arrInvDetail.length > 0) {
+                                    arrInvDetail.forEach(invDet => {
+                                        var newPedObj = Object.assign({}, pedimentoObj)
+                                        newPedObj.serieLote = invDet.serialLotId
+                                        newPedObj.cantidad = invDet.invDetQty
+                                        newPedObj.total = parseFloat(newPedObj.rate) * parseFloat(newPedObj.cantidad);
+                                        arrayPedimento.push(newPedObj)
+                                    })
+
+                                    arrIdLotSerie = arrIdLotSerie.concat(arrInvDetail)
+                                } else {
+                                    pedimentoObj.total = parseFloat(pedimentoObj.rate) * parseFloat(pedimentoObj.cantidad);
+                                    pedimentoObj.cantidad = parseFloat(record_now.getSublistValue({ sublistId: sublista, fieldId: campo_cantidad, line: i })) || '';
+
+                                    arrayPedimento.push(pedimentoObj)
+
+                                }
+
+                                // if (recType == record.Type.INVENTORY_ADJUSTMENT) {
+                                //     var ubicacion_pedimento = record_obj.getSublistValue({ sublistId: sublista, fieldId: 'location', line: i }) || 0;
+                                //     if (contiene_pedimento) {
+                                //         if (cantidad_pedimento < 0) {
+                                //             objPedimento.pedimento = numero_p_linea;
+                                //             objPedimento.cantidad = cantidad_pedimento;
+                                //             objPedimento.item = item_pedimento;
+                                //             objPedimento.ubicacion = ubicacion_pedimento;
+                                //             objPedimento.linea = i;
+                                //             objPedimento.rate = rate_pedimento;
+                                //             arrayPedimento.push(objPedimento);
+                                //         }
+                                //     }
+                                // } else {
+
+                                //     log.audit({ title: 'contiene_pedimento', details: contiene_pedimento });
+                                //     if (contiene_pedimento) {
+                                //         objPedimento.pedimento = numero_p_linea;
+                                //         objPedimento.cantidad = cantidad_pedimento;
+                                //         objPedimento.item = item_pedimento;
+                                //         objPedimento.linea = i;
+                                //         objPedimento.rate = rate_pedimento;
+                                //         arrayPedimento.push(objPedimento);
+                                //     }
+
+                                // }
+                            }
+
+                        }
+                        log.debug({ title: 'arrayPedimento', details: arrayPedimento });
+
+                        if (arrayPedimento.length > 0) {
+                            var lotesSeries = (arrIdLotSerie.length < 0 ? [] : getIdLotNumber(arrIdLotSerie));
+
+                            if (lotesSeries.length > 0) {
+                                arrayPedimento.map(lineaPib => {
+                                    log.debug({ title: 'lineaPib', details: lineaPib });
+                                    let lineaEncontrada = lotesSeries.find(lotSer => lotSer.lotId === lineaPib.serieLote) || null;
+                                    log.debug({ title: 'lineaEncontrada', details: lineaEncontrada });
+                                    if (lineaEncontrada) {
+                                        lineaPib.serieLote = lineaEncontrada.inventorynumber
                                     }
+                                    return lineaPib;
+                                })
+                                log.debug({ title: '🟢Lineas modificadas:', details: arrayPedimento });
+                            }
+                            var masterPedSearch = searchMasterPedimento(arrayPedimento)
+                            var contValidador = 0
+                            arrayPedimento.map(lineToPed => {
+
+                                // log.debug({ title: 'Data to compare', details: { lineToPed, masterPedSearch } });
+                                var pedfinder = null;
+                                pedfinder = (lineToPed.serieLote ? masterPedSearch.find(masterPib => masterPib.item === lineToPed.item && lineToPed.serieLote === masterPib.serieLoteMP && masterPib.qtyAvailable >= lineToPed.cantidad) : masterPedSearch.find(masterPib => masterPib.item === lineToPed.item && masterPib.qtyAvailable >= lineToPed.cantidad))
+                                log.debug({ title: 'pedfinder', details: pedfinder });
+                                if (pedfinder) {
+                                    contValidador++;
+                                    lineToPed.qtyAvailable = pedfinder.qtyAvailable
+                                    lineToPed.internalidMP = pedfinder.internalid
+                                    lineToPed.pedimento = pedfinder.noPedimento
                                 }
-                                log.audit({title:'listaensa',details:listaensa});
-                                var bomSearchObj = search.create({
-                                    type: "bom",
-                                    filters:
-                                        [
-                                            ["internalid","anyof",listaensa[0]]
-                                        ],
-                                    columns:
-                                        [
-                                            search.createColumn({name: "name", label: "Name"}),
-                                            search.createColumn({name: "revisionname", label: "Revision : Name"}),
-                                            search.createColumn({
-                                                name: "internalid",
-                                                sort: search.Sort.ASC,
-                                                label: "Internal ID"
-                                            }),
-                                            search.createColumn({
-                                                name: "internalid",
-                                                join: "revision",
-                                                label: "Internal ID"
-                                            })
-                                        ]
-                                });
-                                var revisionID;
-                                bomSearchObj.run().each(function(result){
-                                    revisionID = result.getValue({name:'internalid',join:'revision'})
-                                    return true;
-                                });
-                                var assamblyload = record.load({
-                                    type: 'bomrevision',
-                                    id: revisionID,
-                                    isDynamic: true,
-                                });
-                                var invAssLineCount2 = assamblyload.getLineCount({
-                                    sublistId: 'component'
-                                });
-                                log.audit({title:'invAssLineCount2',details:invAssLineCount2});
+                            })
+                            if (contValidador === arrayPedimento.length) {
+                                log.debug({ title: 'Lineas a crear historial y consumir pedimento:', details: arrayPedimento });
+                                // // Recorrido para actualizar los registros
+                                arrayPedimento.forEach((lineConsumidora) => {
+                                    var qtyAux = actualizaPedimento(lineConsumidora.internalidMP, lineConsumidora.cantidad, lineConsumidora.rate);
+                                    log.debug({ title: 'qtyAux', details: qtyAux });
+                                    if (qtyAux.qtyOld >= 0 && qtyAux.qtyNew >= 0) {
+                                        historicoPedimento(record_now.id, lineConsumidora, qtyAux.qtyOld, qtyAux.qtyNew)
+                                    }
+                                })
 
-                                var ItemsAssembly = [];
-                                for( var iteraciones3 = 0 ; iteraciones3 < invAssLineCount2; iteraciones3++){
-
-                                    ItemsAssembly.push(assamblyload.getSublistValue({
-                                        sublistId: 'component',
-                                        fieldId: 'item',
-                                        line: iteraciones3
-                                    }))
-
-                                }
-
-
-
-                                log.audit({title:'ItemsAssembly<<<<<<',details:ItemsAssembly});
-                                for(var iteracion4 =0 ;iteracion4< ItemsAssembly.length;iteracion4++){
-                                var pedimentoAntiguo;
-                                    var customrecord_efx_ped_master_recordSearchObj = search.create({
-                                        type: "customrecord_efx_ped_master_record",
-                                        filters:
-                                            [
-                                                ["custrecord_exf_ped_item","anyof",ItemsAssembly[iteracion4]]
-                                            ],
-                                        columns:
-                                            [
-                                                search.createColumn({name: "scriptid", label: "Script ID"}),
-                                                search.createColumn({name: "custrecord_efx_ped_number", label: "Número de Pedimento"}),
-                                                search.createColumn({name: "custrecord_exf_ped_item", label: "Articulo"}),
-                                                search.createColumn({name: "custrecord_efx_ped_available", label: "Cantidad Disponible"}),
-                                                search.createColumn({name: "custrecord_efx_ped_total", label: "Costo Total"})
-                                            ]
-                                    });
-                                    var searchResultCount = customrecord_efx_ped_master_recordSearchObj.runPaged().count;
-                                    log.debug("customrecord_efx_ped_master_recordSearchObj result count",searchResultCount);
-                                    customrecord_efx_ped_master_recordSearchObj.run().each(function(result){
-                                        pedimentoAntiguo = result.getValue({name: "custrecord_efx_ped_number"})
-                                        return true;
-                                    });
-
-
-                                    var numero_p_linea = record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: 'custcol_efx_ped_numero_pedimento',
-                                        line: i
-                                    }) || '';
-
-                                    var cantidad_pedimento = parseFloat(record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: campo_cantidad,
-                                        line: i
-                                    })) || 0;
-
-                                    var contiene_pedimento = pedimentoAntiguo;
-
-                                    var item_pedimento = ItemsAssembly[iteracion4]
-
-                                    var rate_pedimento = record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: campo_rate,
-                                        line: i
-                                    }) || 0;
-
-                                    if (recType == record.Type.INVENTORY_ADJUSTMENT) {
-                                        var ubicacion_pedimento = record_obj.getSublistValue({
-                                            sublistId: sublista,
-                                            fieldId: 'location',
-                                            line: i
-                                        }) || 0;
-                                        if(contiene_pedimento) {
-                                            if (cantidad_pedimento < 0) {
-                                                objPedimento.pedimento = numero_p_linea;
-                                                objPedimento.cantidad = cantidad_pedimento;
-                                                objPedimento.item = item_pedimento;
-                                                objPedimento.ubicacion = ubicacion_pedimento;
-                                                objPedimento.linea = i;
-                                                objPedimento.rate = rate_pedimento;
-                                                arrayPedimento.push({pedimento:numero_p_linea,cantidad:cantidad_pedimento,item:item_pedimento,ubicacion:ubicacion_pedimento,linea:i,rate:rate_pedimento});
+                                if (recType === record.Type.ITEM_FULFILLMENT) {
+                                    var itemFulfillment = record.load({ type: record.Type.ITEM_FULFILLMENT, id: record_now.id, isDynamic: true })
+                                    var numLines = itemFulfillment.getLineCount({ sublistId: 'item' });
+                                    for (var i = 0; i < numLines; i++) {
+                                        let validationToContains = itemFulfillment.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_contains', line: i }) || '';
+                                        let item = itemFulfillment.getSublistValue({ sublistId: sublista, fieldId: 'item', line: i }) || '';
+                                        log.debug({ title: 'item', details: item });
+                                        var noPedimentoString = '';
+                                        if (validationToContains === true) {
+                                            var itemLine = arrayPedimento.filter(function (itemLinePib) { return itemLinePib.item == item }) || [];
+                                            log.debug({ title: 'arrayPedimento', details: arrayPedimento });
+                                            log.debug({ title: 'itemLine', details: itemLine });
+                                            if (itemLine.length > 0) {
+                                                if (itemLine[0].serieLote) {
+                                                    itemLine.forEach((itemPIB, index_item) => {
+                                                        if (index_item === (itemPIB.length - 1)) {
+                                                            noPedimentoString += (!noPedimentoString.includes(itemPIB.pedimento) ? itemPIB.pedimento : '')
+                                                        } else {
+                                                            noPedimentoString += (!noPedimentoString.includes(itemPIB.pedimento) ? itemPIB.pedimento + ',' : '')
+                                                        }
+                                                    })
+                                                } else {
+                                                    noPedimentoString = itemLine[0].pedimento
+                                                }
+                                            }
+                                            itemFulfillment.selectLine({ sublistId: sublista, line: i });
+                                            itemFulfillment.setCurrentSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_numero_pedimento', value: noPedimentoString, ignoreFieldChange: true })
+                                            itemFulfillment.commitLine({ sublistId: sublista })
+                                        }
+                                    }
+                                    itemFulfillment.save({ enableSourcing: true, ignoreMandatoryFields: true })
+                                    if (record_now.getValue({ fieldId: 'createdfrom' })) {
+                                        var invoice = record.load({ type: record.Type.SALES_ORDER, id: record_now.getValue({ fieldId: 'createdfrom' }), isDynamic: true })
+                                        var numLines = invoice.getLineCount({ sublistId: 'item' });
+                                        for (var i = 0; i < numLines; i++) {
+                                            let validationToContains = invoice.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_contains', line: i }) || '';
+                                            let item = invoice.getSublistValue({ sublistId: sublista, fieldId: 'item', line: i }) || '';
+                                            var noPedimentoString = '';
+                                            if (validationToContains === true) {
+                                                var itemLine = arrayPedimento.filter(function (itemLinePib) { return itemLinePib.item == item }) || [];
+                                                log.debug({ title: 'itemLine', details: itemLine });
+                                                log.debug({ title: 'arrayPedimento', details: arrayPedimento });
+                                                if (itemLine.length > 0) {
+                                                    if (itemLine[0].serieLote) {
+                                                        itemLine.forEach((itemPIB, index_item) => {
+                                                            if (index_item === (itemPIB.length - 1)) {
+                                                                noPedimentoString += (!noPedimentoString.includes(itemPIB.pedimento) ? itemPIB.pedimento : '')
+                                                            } else {
+                                                                noPedimentoString += (!noPedimentoString.includes(itemPIB.pedimento) ? itemPIB.pedimento + ',' : '')
+                                                            }
+                                                        })
+                                                    } else {
+                                                        noPedimentoString = itemLine[0].pedimento
+                                                    }
+                                                }
+                                                invoice.selectLine({ sublistId: sublista, line: i });
+                                                invoice.setCurrentSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_numero_pedimento', value: noPedimentoString, ignoreFieldChange: true })
+                                                invoice.commitLine({ sublistId: sublista })
                                             }
                                         }
-                                        
-                                    } else {
-
-                                        log.audit({title: 'contiene_pedimento', details: contiene_pedimento});
-                                        if(contiene_pedimento) {
-                                            objPedimento.pedimento = numero_p_linea;
-                                            objPedimento.cantidad = cantidad_pedimento;
-                                            objPedimento.item = item_pedimento;
-                                            objPedimento.linea = i;
-                                            objPedimento.rate = rate_pedimento;
-                                            arrayPedimento.push(objPedimento);
-                                            arrayPedimento.push({pedimento:numero_p_linea,cantidad:cantidad_pedimento,item:item_pedimento,ubicacion:ubicacion_pedimento,linea:i,rate:rate_pedimento});
-                                        }
-
-                                    }
-                                }
-                                log.audit({title: 'arrayPedimento', details: arrayPedimento});
-                            }else{
-                                if(tipoItem!='Group' && tipoItem!='EndGroup'){
-                                    log.debug({title:'No es grupo', details:'NO ES GRUPO NI INICIO NI FIN'});
-                                    var numero_p_linea = record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: 'custcol_efx_ped_numero_pedimento',
-                                        line: i
-                                    }) || '';
-
-                                    var cantidad_pedimento = parseFloat(record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: campo_cantidad,
-                                        line: i
-                                    })) || 0;
-
-                                    var contiene_pedimento = record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: 'custcol_efx_ped_contains',
-                                        line: i
-                                    }) || false;
-
-                                    var item_pedimento = record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: 'item',
-                                        line: i
-                                    }) || 0;
-
-                                    var rate_pedimento = record_obj.getSublistValue({
-                                        sublistId: sublista,
-                                        fieldId: campo_rate,
-                                        line: i
-                                    }) || 0;
-
-                                    if (recType == record.Type.INVENTORY_ADJUSTMENT) {
-                                        var ubicacion_pedimento = record_obj.getSublistValue({
-                                            sublistId: sublista,
-                                            fieldId: 'location',
-                                            line: i
-                                        }) || 0;
-                                        if(contiene_pedimento) {
-                                            if (cantidad_pedimento < 0) {
-                                                objPedimento.pedimento = numero_p_linea;
-                                                objPedimento.cantidad = cantidad_pedimento;
-                                                objPedimento.item = item_pedimento;
-                                                objPedimento.ubicacion = ubicacion_pedimento;
-                                                objPedimento.linea = i;
-                                                objPedimento.rate = rate_pedimento;
-                                                arrayPedimento.push(objPedimento);
-                                            }
-                                        }
-                                    } else {
-
-                                        log.audit({title: 'contiene_pedimento', details: contiene_pedimento});
-                                        if(contiene_pedimento) {
-                                            objPedimento.pedimento = numero_p_linea;
-                                            objPedimento.cantidad = cantidad_pedimento;
-                                            objPedimento.item = item_pedimento;
-                                            objPedimento.linea = i;
-                                            objPedimento.rate = rate_pedimento;
-                                            arrayPedimento.push(objPedimento);
-                                        }
-
+                                        invoice.save({ enableSourcing: true, ignoreMandatoryFields: true })
                                     }
                                 }
                             }
                         }
-                        log.debug({title:'arrayPedimento', details:arrayPedimento});
-
-
-
-                        if(arrayPedimento.length>0) {
-                            log.audit({title: 'arrayPedimento', details: arrayPedimento});
-                            var filtros_pedimento = new Array();
-                            for (var i = 0; i < arrayPedimento.length; i++) {
-                                var filtro = [['custrecord_exf_ped_item', search.Operator.IS, arrayPedimento[i].item]];
-                                filtros_pedimento.push(filtro);
-                                var conteo = i + 1;
-                                if (conteo < arrayPedimento.length) {
-                                    filtros_pedimento.push('OR');
-                                }
-                            }
-                            log.audit({title: 'filtros_pedimento', details: filtros_pedimento});
-
-                            var buscaPed = search.create({
-                                type: 'customrecord_efx_ped_master_record',
-                                filters: [
-                                    ['isinactive', search.Operator.IS, 'F']
-                                    , 'AND',
-                                    ['custrecord_efx_ped_available', search.Operator.ISNOT, '0.0']
-                                    , 'AND',
-                                    filtros_pedimento
-                                ],
-                                columns: [
-                                    search.createColumn({name: 'created', sort: search.Sort.ASC}),
-                                    search.createColumn({name: 'custrecord_efx_ped_number'}),
-                                    search.createColumn({name: 'custrecord_exf_ped_item'}),
-                                    search.createColumn({name: 'custrecord_efx_ped_available'}),
-                                    search.createColumn({name: 'custrecord_efx_ped_exchange'}),
-                                    search.createColumn({name: 'custrecord_efx_ped_price'}),
-                                    search.createColumn({name: 'custrecord_efx_ped_total'}),
-                                    search.createColumn({name: 'internalid'}),
-                                ],
-                            });
-
-                            log.audit({title: 'buscaPed', details: buscaPed});
-                            var ejecutar_pedimento = buscaPed.run();
-                            log.audit({title: 'ejecutar_pedimento', details: ejecutar_pedimento});
-                            var resultado_pedimento = ejecutar_pedimento.getRange(0, 100);
-
-                            log.audit({title: 'resultado_pedimento', details: resultado_pedimento.length});
-                            var array_busqueda_ped = new Array();
-                            for (var i = 0; i < resultado_pedimento.length; i++) {
-                                var obj_busca_ped = {
-                                    created:'',
-                                    custrecord_efx_ped_number:'',
-                                    custrecord_exf_ped_item:'',
-                                    custrecord_efx_ped_available:'',
-                                    custrecord_efx_ped_exchange:'',
-                                    custrecord_efx_ped_price:'',
-                                    custrecord_efx_ped_total:'',
-                                    internalid:''
-                                }
-                                obj_busca_ped.created = resultado_pedimento[i].getValue({name: 'created'}) || '';
-                                obj_busca_ped.custrecord_efx_ped_number = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_number'}) || '';
-                                obj_busca_ped.custrecord_exf_ped_item = resultado_pedimento[i].getValue({name: 'custrecord_exf_ped_item'}) || '';
-                                obj_busca_ped.custrecord_efx_ped_available = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_available'}) || '';
-                                obj_busca_ped.custrecord_efx_ped_exchange = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_exchange'}) || '';
-                                obj_busca_ped.custrecord_efx_ped_price = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_price'}) || '';
-                                obj_busca_ped.custrecord_efx_ped_total = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_total'}) || '';
-                                obj_busca_ped.internalid = resultado_pedimento[i].getValue({name: 'internalid'}) || '';
-                                array_busqueda_ped.push(obj_busca_ped);
-                            }
-                            log.audit({title: 'array_busqueda_ped', details: array_busqueda_ped});
-
-                            var array_lineas = new Array();
-                            for (var x = 0; x < arrayPedimento.length; x++) {
-                                for (var i = 0; i < array_busqueda_ped.length; i++) {
-                                    var item_master = array_busqueda_ped[i].custrecord_exf_ped_item || '';
-                                    var id_pedimento = array_busqueda_ped[i].internalid || '';
-                                    var numero_pedimento = array_busqueda_ped[i].custrecord_efx_ped_number || '';
-                                    var cantidad_master = parseFloat(array_busqueda_ped[i].custrecord_efx_ped_available) || 0;
-                                    var precio_master = parseFloat(array_busqueda_ped[i].custrecord_efx_ped_price) || 0;
-
-                                    if (cantidad_master > 0 && item_master == arrayPedimento[x].item) {
-                                        arrayPedimento[x].numeroPedimento = numero_pedimento;
-                                        var obj_lineas = {
-                                            item: '',
-                                            cantidad: '',
-                                            linea: '',
-                                            ubicacion:'',
-                                        }
-                                        var cantidad_transaccion = parseFloat(arrayPedimento[x].cantidad);
-                                        if (recType == record.Type.INVENTORY_ADJUSTMENT) {
-                                            cantidad_transaccion = cantidad_transaccion * (-1);
-                                        }
-                                        var cantidad_nueva = cantidad_master - cantidad_transaccion;
-
-
-                                        log.audit({title: 'cantidad_nueva_ver', details: cantidad_nueva});
-                                        if (cantidad_nueva < 0) {
-                                            obj_lineas.item = arrayPedimento[x].item;
-                                            obj_lineas.cantidad = cantidad_nueva;
-                                            obj_lineas.linea = arrayPedimento[x].linea;
-                                            if (recType == record.Type.INVENTORY_ADJUSTMENT) {
-                                                obj_lineas.ubicacion = arrayPedimento[x].ubicacion;
-                                            }
-                                            actualizaPedimento(id_pedimento, '0.0', precio_master);
-                                            historicoPedimento(record_now.id,arrayPedimento[x],id_pedimento,cantidad_master,0);
-                                            array_busqueda_ped[i].custrecord_efx_ped_available = 0;
-                                            array_lineas.push(obj_lineas);
-
-                                            if (recType == record.Type.INVENTORY_ADJUSTMENT) {
-                                                var cantidad_p = obj_lineas.cantidad * (-1);
-                                                var cantidad_t_nueva = cantidad_transaccion - cantidad_p;
-                                                cantidad_t_nueva = cantidad_t_nueva * (-1);
-                                            }else{
-                                                var cantidad_t_nueva = cantidad_transaccion - obj_lineas.cantidad;
-                                            }
-                                            log.debug({title:'SET VAULES PED', details:arrayPedimento[x].linea});
-                                            log.debug({title:'SET VAULES PED', details:arrayPedimento[x]});
-                                            record_obj.setSublistValue({
-                                                sublistId: sublista,
-                                                fieldId: 'custcol_efx_ped_numero_pedimento',
-                                                value: numero_pedimento,
-                                                line: arrayPedimento[x].linea
-                                            });
-
-                                            record_obj.setSublistValue({
-                                                sublistId: sublista,
-                                                fieldId: campo_cantidad,
-                                                value: cantidad_t_nueva,
-                                                line: arrayPedimento[x].linea
-                                            });
-
-
-                                        } else {
-                                            actualizaPedimento(id_pedimento, cantidad_nueva, precio_master);
-                                            historicoPedimento(record_now.id,arrayPedimento[x],id_pedimento,cantidad_master,cantidad_nueva);
-                                            log.audit({title:'cantidad_nueva_a',details:cantidad_nueva});
-                                            try{
-                                                array_busqueda_ped[i].custrecord_efx_ped_available = cantidad_nueva;
-                                            }catch (e){
-                                                log.audit({title:'e',details:e});
-                                            }
-                                            log.debug({title:'linea 467', details:x});
-                                            record_obj.setSublistValue({
-                                                sublistId: sublista,
-                                                fieldId: 'custcol_efx_ped_numero_pedimento',
-                                                value: numero_pedimento,
-                                                line: arrayPedimento[x].linea
-                                            });
-
-
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-
-                            //busqueda y actualizacion si un pedimento llego a 0 y faltaron articulos para crear mas lineas
-                            //recorrer arreglo de lineas nuevas e ir restando de los pedimentos hasta consumirlas todas, si no
-                            // hay mas pedimentos se quedan vacias
-
-                            log.audit({title:'array_lineas',details:array_lineas});
-                            if (array_lineas.length > 0) {
-                                var filtros_pedimento = new Array();
-                                for (var i = 0; i < array_lineas.length; i++) {
-                                    var filtro = [['custrecord_exf_ped_item', search.Operator.IS, array_lineas[i].item]];
-                                    filtros_pedimento.push(filtro);
-                                    var conteo = i + 1;
-                                    if (conteo < array_lineas.length) {
-                                        filtros_pedimento.push('OR');
-                                    }
-                                }
-                                log.audit({title: 'filtros_pedimento_lineas', details: filtros_pedimento});
-
-                                var buscaPed = search.create({
-                                    type: 'customrecord_efx_ped_master_record',
-                                    filters: [
-                                        ['isinactive', search.Operator.IS, 'F']
-                                        , 'AND',
-                                        ['custrecord_efx_ped_available', search.Operator.ISNOT, '0.0']
-                                        , 'AND',
-                                        filtros_pedimento
-                                    ],
-                                    columns: [
-                                        search.createColumn({name: 'created', sort: search.Sort.ASC}),
-                                        search.createColumn({name: 'custrecord_efx_ped_number'}),
-                                        search.createColumn({name: 'custrecord_exf_ped_item'}),
-                                        search.createColumn({name: 'custrecord_efx_ped_available'}),
-                                        search.createColumn({name: 'custrecord_efx_ped_exchange'}),
-                                        search.createColumn({name: 'custrecord_efx_ped_price'}),
-                                        search.createColumn({name: 'custrecord_efx_ped_total'}),
-                                        search.createColumn({name: 'internalid'}),
-                                    ],
-                                });
-
-                                log.audit({title: 'buscaPed', details: buscaPed});
-                                var ejecutar_pedimento = buscaPed.run();
-                                log.audit({title: 'ejecutar_pedimento', details: ejecutar_pedimento});
-                                var resultado_pedimento = ejecutar_pedimento.getRange(0, 100);
-
-                                log.audit({title: 'resultado_pedimento', details: resultado_pedimento.length});
-
-                                var array_busqueda_ped = new Array();
-                                for (var i = 0; i < resultado_pedimento.length; i++) {
-                                    var obj_busca_ped = {
-                                        created:'',
-                                        custrecord_efx_ped_number:'',
-                                        custrecord_exf_ped_item:'',
-                                        custrecord_efx_ped_available:'',
-                                        custrecord_efx_ped_exchange:'',
-                                        custrecord_efx_ped_price:'',
-                                        custrecord_efx_ped_total:'',
-                                        internalid:''
-                                    }
-                                    obj_busca_ped.created = resultado_pedimento[i].getValue({name: 'created'}) || '';
-                                    obj_busca_ped.custrecord_efx_ped_number = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_number'}) || '';
-                                    obj_busca_ped.custrecord_exf_ped_item = resultado_pedimento[i].getValue({name: 'custrecord_exf_ped_item'}) || '';
-                                    obj_busca_ped.custrecord_efx_ped_available = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_available'}) || '';
-                                    obj_busca_ped.custrecord_efx_ped_exchange = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_exchange'}) || '';
-                                    obj_busca_ped.custrecord_efx_ped_price = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_price'}) || '';
-                                    obj_busca_ped.custrecord_efx_ped_total = resultado_pedimento[i].getValue({name: 'custrecord_efx_ped_total'}) || '';
-                                    obj_busca_ped.internalid = resultado_pedimento[i].getValue({name: 'internalid'}) || '';
-                                    array_busqueda_ped.push(obj_busca_ped);
-                                }
-
-                                var array_elimina = new Array();
-                                for (var p = 0; p < array_lineas.length; p++) {
-                                    var cantidad_lineas = array_lineas[p].cantidad;
-                                    if (recType == record.Type.INVENTORY_ADJUSTMENT) {
-                                        cantidad_lineas = array_lineas[p].cantidad * (-1);
-                                    }
-
-                                    for (var y = 0; y < array_busqueda_ped.length; y++) {
-
-                                        var item_master = array_busqueda_ped[y].custrecord_exf_ped_item || '';
-                                        var id_pedimento = array_busqueda_ped[y].internalid || '';
-                                        var cantidad_master = parseFloat(array_busqueda_ped[y].custrecord_efx_ped_available) || 0;
-                                        var precio_master = parseFloat(array_busqueda_ped[y].custrecord_efx_ped_price) || 0;
-                                        var numero_pedimento = array_busqueda_ped[y].custrecord_efx_ped_number || '';
-
-                                        if (item_master == array_lineas[p].item && cantidad_master>0) {
-                                            array_lineas[p].numeroPedimento=numero_pedimento;
-                                            var cantidad_nueva_linea = cantidad_master - cantidad_lineas;
-                                            //-5
-                                            log.audit({title: 'cantidad_nueva_linea', details: cantidad_nueva_linea});
-                                            if (cantidad_nueva_linea < 0) {
-                                                record_obj.insertLine({
-                                                    sublistId: sublista,
-                                                    line: 0,
-                                                });
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: 'item',
-                                                    line:0,
-                                                    value: array_lineas[p].item
-                                                });
-
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: campo_cantidad,
-                                                    line:0,
-                                                    value: array_lineas[p].cantidad - cantidad_nueva_linea
-                                                });
-                                                log.debug({title:'line 588', details:'Valor en linea 0'});
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: 'custcol_efx_ped_numero_pedimento',
-                                                    value: numero_pedimento,
-                                                    line: 0
-                                                });
-
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: 'location',
-                                                    line:0,
-                                                    value: array_lineas[p].ubicacion
-                                                });
-
-                                                array_lineas[p].cantidad = cantidad_nueva_linea;
-                                                array_busqueda_ped[y].custrecord_efx_ped_available = 0;
-                                                actualizaPedimento(id_pedimento, '0.0', precio_master);
-                                                historicoPedimento(record_now.id,array_lineas[p],id_pedimento,cantidad_master,0);
-                                                array_elimina.push(y);
-                                            } else {
-                                                record_obj.insertLine({
-                                                    sublistId: sublista,
-                                                    line: 0,
-                                                });
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: 'item',
-                                                    line:0,
-                                                    value: array_lineas[p].item
-                                                });
-
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: campo_cantidad,
-                                                    line:0,
-                                                    value: array_lineas[p].cantidad
-                                                });
-                                                log.debug({title:'linea 626', details:'Valor en la linea numero 0'});
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: 'custcol_efx_ped_numero_pedimento',
-                                                    value: numero_pedimento,
-                                                    line: 0
-                                                });
-
-                                                record_obj.setSublistValue({
-                                                    sublistId: sublista,
-                                                    fieldId: 'location',
-                                                    line:0,
-                                                    value: array_lineas[p].ubicacion
-                                                });
-
-                                                actualizaPedimento(id_pedimento, cantidad_nueva_linea, precio_master);
-                                                historicoPedimento(record_now.id,array_lineas[p],id_pedimento,cantidad_master,cantidad_nueva_linea);
-                                            }
-
-                                        }
-                                    }
-                                    log.audit({title: 'array_elimina', details: array_elimina});
-                                    log.audit({title: 'array_busqueda_ped', details: array_busqueda_ped});
-                                    if(array_elimina.length>0){
-                                        for(var i=0;i<array_elimina.length;i++){
-                                            array_busqueda_ped.splice(array_elimina[i],1);
-                                        }
-                                    }
-
-                                    log.audit({title: 'array_busqueda_ped.length', details: array_busqueda_ped.length});
-                                    log.audit({title: 'array_lineas[p].cantidad', details: array_lineas[p].cantidad});
-                                }
-                            }
-                        }
-                        record_obj.save();
-                    }
+                        break;
                 }
 
-            }catch(error_consumir){
-                log.audit({title:'error_consumir',details:error_consumir});
+
+            } catch (error_consumir) {
+                log.audit({ title: 'error_consumir', details: error_consumir });
             }
         }
 
-        const actualizaPedimento = (id_pedimento,cantidad_nueva,precio_master) =>{
-            log.audit({title:'id_pedimento',details:id_pedimento});
-            log.audit({title:'cantidad_nueva',details:cantidad_nueva});
-            log.audit({title:'precio_master',details:precio_master});
-            var master_obj = record.load({
-                type: 'customrecord_efx_ped_master_record',
-                id:id_pedimento
-            });
-            var nuevo_total = 0;
-            if(cantidad_nueva==0){
-                nuevo_total = 0;
-            }else {
-                nuevo_total = precio_master*cantidad_nueva;
+        function searchMasterPedimento(arrLines) {
+            try {
+                var filtroHistorico = [];
+                arrLines.forEach((linePibote, index) => {
+                    var filtroPib = []
+                    filtroPib.push(['custrecord_exf_ped_item', search.Operator.ANYOF, linePibote.item])
+                    if (linePibote.serieLote) {
+                        filtroPib.push("AND", ["custrecord_efx_ped_serial_lote", search.Operator.IS, linePibote.serieLote])
+                    }
+                    filtroHistorico.push(filtroPib)
+                    if ((arrLines.length - 1) !== index) {
+                        filtroHistorico.push('OR')
+                    }
+                });
+                log.debug({ title: 'filtroHistorico', details: filtroHistorico });
+                // Busca a partir de los id de los articulos y la ubicacion establecida con anterioridad
+                var buscaPed = search.create({
+                    type: 'customrecord_efx_ped_master_record',
+                    filters: [
+                        ['isinactive', search.Operator.IS, 'F']
+                        , 'AND',
+                        ['custrecord_efx_ped_available', search.Operator.ISNOT, '0.0']
+                        , 'AND',
+                        filtroHistorico
+                    ],
+                    columns: [
+                        search.createColumn({ name: 'internalid' }),
+                        search.createColumn({ name: 'custrecord_exf_ped_item' }),
+                        search.createColumn({ name: 'custrecord_efx_ped_number' }),
+                        search.createColumn({ name: 'custrecord_efx_ped_available' }),
+                        search.createColumn({ name: 'custrecord_efx_ped_serial_lote' }),
+                    ],
+                });
+                var ejecutar_pedimento = buscaPed.run();
+                var resultado_pedimento = ejecutar_pedimento.getRange(0, 100);
+                var stok_total = 0;
+                var masterPed = [];
+                var masterItems = [];
+                for (var x = 0; x < resultado_pedimento.length; x++) {
+                    var internalid = resultado_pedimento[x].getValue({ name: 'internalid' }) || 'NA';
+                    var itemMaster = resultado_pedimento[x].getValue({ name: 'custrecord_exf_ped_item' }) || 'NA';
+                    var noPedMaster = resultado_pedimento[x].getValue({ name: 'custrecord_efx_ped_number' }) || 'NA';
+                    var serieLoteMP = resultado_pedimento[x].getValue({ name: 'custrecord_efx_ped_serial_lote' }) || '';
+                    var cantidad_av = parseFloat(resultado_pedimento[x].getValue({ name: 'custrecord_efx_ped_available' })) || 0;
+                    log.debug({ title: 'Data to master ped', details: { itemMaster, noPedMaster, serieLoteMP, cantidad_av } });
+                    if (itemMaster !== 'NA' && noPedMaster !== 'NA' && cantidad_av > 0) {
+                        masterPed.push({
+                            internalid: internalid,
+                            item: itemMaster,
+                            qtyAvailable: cantidad_av,
+                            noPedimento: noPedMaster,
+                            serieLoteMP: serieLoteMP
+                        })
+                        masterItems.push(itemMaster);
+                    }
+                    stok_total = stok_total + cantidad_av;
+                }
+
+                log.debug({ title: 'masterItems', details: masterItems });
+                log.debug({ title: 'Master Ped Available:', details: masterPed });
+                return masterPed;
+            } catch (e) {
+                log.error({ title: 'Error searchMasterPedimento:', details: e });
+                return [];
             }
-            master_obj.setValue({fieldId:'custrecord_efx_ped_available',value:cantidad_nueva});
-            master_obj.setValue({fieldId:'custrecord_efx_ped_total',value:nuevo_total});
-            master_obj.save();
+        }
+        function getIdLotNumber(arrIdLotSerie) {
+            try {
+                var filtros = []
+                arrIdLotSerie.forEach((lotSerie, index) => {
+                    if (index === (arrIdLotSerie.length - 1)) {
+                        filtros.push(["inventorynumber.internalid", "anyof", lotSerie.serialLotId])
+                        // filtros.push(["inventorynumber.internalid", "anyof", lotSerie.serialLotId], "AND", ["internalid", "anyof", lotSerie.invDetNumId])
+                    } else {
+                        filtros.push(["inventorynumber.internalid", "anyof", lotSerie.serialLotId], 'OR')
+                    }
+                })
+                log.debug({ title: 'arrIdLotSerie', details: arrIdLotSerie });
+                log.debug({ title: 'filtros', details: filtros });
+                var inventorydetailSearchObj = search.create({
+                    type: "inventorydetail",
+                    filters: filtros,
+                    columns:
+                        [
+                            search.createColumn({ name: "internalid", label: "Internal ID" }),
+                            search.createColumn({ name: "inventorynumber", sort: search.Sort.ASC, label: " Number" }),
+                            search.createColumn({ name: "binnumber", label: "Bin Number" }),
+                            search.createColumn({ name: "quantity", label: "Quantity" }),
+                            search.createColumn({ name: "itemcount", label: "Item Count" }),
+                            search.createColumn({ name: "expirationdate", label: "Expiration Date" }),
+                            search.createColumn({ name: "unit", join: "transaction", label: "Units" })
+                        ]
+                });
+                var searchResultCount = inventorydetailSearchObj.runPaged().count;
+                var dataResults = inventorydetailSearchObj.runPaged({ pageSize: 1000 });
+
+                log.debug({ title: 'Numero de resultados', details: searchResultCount });
+                var results = new Array();
+                // Obtain th data for saved search
+                var thePageRanges = dataResults.pageRanges;
+                for (var i in thePageRanges) {
+                    var searchPage = dataResults.fetch({ index: thePageRanges[i].index });
+                    searchPage.data.forEach(function (result) {
+                        let inventorynumber = result.getText({ name: 'inventorynumber' })
+                        let lotId = parseInt(result.getValue({ name: 'inventorynumber' }))
+                        let objInventoryDetail = arrIdLotSerie.find((invDet) => invDet.serialLotId === lotId) || null;
+                        if (objInventoryDetail) {
+                            results.push({ lotId, inventorynumber })
+                        }
+                        // arrIdLotSerie.map(idLoteSerie => {
+                        //     if (idLoteSerie.serialLotId === lotId) {
+                        //         results.push({ inventorynumber, lotId })
+                        //     }
+                        // })
+
+
+                        return true;
+                    });
+                }
+                log.debug({ title: 'Result LOT', details: results });
+                return results;
+            } catch (e) {
+                log.error({ title: 'Error getIdLotNumber:', details: e });
+            }
+        }
+        function actualizaPedimento(id_pedimento, cantidad_nueva, precio_master) {
+            log.audit({ title: 'id_pedimento', details: id_pedimento });
+            log.audit({ title: 'cantidad_nueva', details: cantidad_nueva });
+            log.audit({ title: 'precio_master', details: precio_master });
+            var master_obj = record.load({ type: 'customrecord_efx_ped_master_record', id: id_pedimento });
+            var qtyAvailable = parseFloat(master_obj.getValue({ fieldId: 'custrecord_efx_ped_available' })) || 0;
+            var qtyOld = parseFloat(master_obj.getValue({ fieldId: 'custrecord_efx_ped_available' })) || 0;
+            qtyAvailable = qtyAvailable - cantidad_nueva;
+            if (qtyAvailable >= 0) {
+                var nuevo_total = 0;
+                if (qtyAvailable == 0) {
+                    nuevo_total = 0;
+                } else {
+                    nuevo_total = precio_master * qtyAvailable;
+                }
+                master_obj.setValue({ fieldId: 'custrecord_efx_ped_available', value: qtyAvailable });
+                master_obj.setValue({ fieldId: 'custrecord_efx_ped_total', value: nuevo_total });
+                master_obj.save();
+                return { qtyOld: qtyOld, qtyNew: qtyAvailable }
+            } else {
+                return { qtyOld: -1, qtyNew: -1 };
+            }
         }
 
-        const historicoPedimento = (id_tran,array_pedimentos,idPedimentos,oldValue,cantidad_nueva) => {
-            var ped_history = record.create({
-                type: 'customrecord_efx_ped_record_history'
-            });
-            ped_history.setValue({fieldId: 'custrecord_efx_ped_related_tran', value: id_tran});
-            ped_history.setValue({fieldId: 'custrecord_efx_ped_h_item', value: array_pedimentos.item});
-            ped_history.setValue({
-                fieldId: 'custrecord_efx_ped_h_quantity',
-                value: array_pedimentos.cantidad
-            });
-            ped_history.setValue({fieldId: 'custrecord_efx_ped_h_oldvalue', value: oldValue});
+        const historicoPedimento = (id_tran, array_pedimentos, oldValue, cantidad_nueva) => {
+            var ped_history = record.create({ type: 'customrecord_efx_ped_record_history' });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_related_tran', value: id_tran });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_h_item', value: array_pedimentos.item });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_h_quantity', value: array_pedimentos.cantidad });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_h_oldvalue', value: oldValue });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_historial_serial_lote', value: array_pedimentos.serieLote || '' });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_h_location', value: array_pedimentos.ubicacion });
 
-            if(cantidad_nueva){
-                log.audit({title:'oldValue',details:oldValue});
-                log.audit({title:'cantidad_nueva',details:cantidad_nueva});
+            if (cantidad_nueva) {
+                log.audit({ title: 'oldValue', details: oldValue });
+                log.audit({ title: 'cantidad_nueva', details: cantidad_nueva });
 
-                ped_history.setValue({
-                    fieldId: 'custrecord_efx_ped_newvalue',
-                    value: parseFloat(cantidad_nueva)
-                });
-            }else{
-                log.audit({title:'array_pedimentos.cantidad',details:array_pedimentos.cantidad});
-                log.audit({title:'oldValue',details:oldValue});
-                ped_history.setValue({
-                    fieldId: 'custrecord_efx_ped_newvalue',
-                    value: 0
-                });
+                ped_history.setValue({ fieldId: 'custrecord_efx_ped_newvalue', value: parseFloat(cantidad_nueva) });
+            } else {
+                log.audit({ title: 'array_pedimentos.cantidad', details: array_pedimentos.cantidad });
+                log.audit({ title: 'oldValue', details: oldValue });
+                ped_history.setValue({ fieldId: 'custrecord_efx_ped_newvalue', value: 0 });
             }
 
-            ped_history.setValue({fieldId: 'custrecord_efx_ped_h_pedimento', value: idPedimentos});
-            ped_history.setValue({
-                fieldId: 'custrecord_efx_ped_numpedimento',
-                value: array_pedimentos.numeroPedimento
-            });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_h_pedimento', value: array_pedimentos.internalidMP });
+            ped_history.setValue({ fieldId: 'custrecord_efx_ped_numpedimento', value: array_pedimentos.pedimento });
             var crea_h = ped_history.save();
-            log.audit({title:'crea_historico',details:crea_h});
+            log.audit({ title: 'crea_historico', details: crea_h });
         }
 
-        return {beforeLoad, beforeSubmit, afterSubmit}
+        return { beforeLoad, beforeSubmit, afterSubmit }
 
     });

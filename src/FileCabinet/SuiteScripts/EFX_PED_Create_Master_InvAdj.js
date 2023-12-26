@@ -15,6 +15,7 @@ define(['N/record', 'N/search'], (record, search) => {
      * @since 2015.2
      */
     const beforeLoad = (scriptContext) => {
+        log.debug({ title: 'Iniciando el script para generacion de maestro de pedimentos', details: true });
     }
 
     /**
@@ -312,17 +313,6 @@ define(['N/record', 'N/search'], (record, search) => {
                     var sublista = '';
                     var campo_rate = '';
                     var campo_cantidad = '';
-
-                    if (recType == record.Type.CREDIT_MEMO) {
-                        sublista = 'item';
-                        campo_cantidad = 'quantity';
-                        campo_rate = 'rate';
-                    }
-                    if (recType == record.Type.ITEM_RECEIPT) {
-                        sublista = 'item';
-                        campo_cantidad = 'quantity';
-                        campo_rate = 'rate';
-                    }
                     if (recType == record.Type.INVENTORY_ADJUSTMENT) {
                         sublista = 'inventory';
                         campo_cantidad = 'adjustqtyby';
@@ -410,164 +400,38 @@ define(['N/record', 'N/search'], (record, search) => {
 
                     var array_pedimentoObj = [];
 
-                    if (recType == record.Type.ITEM_RECEIPT) {
-                        sublista = 'item';
-                        campo_cantidad = 'quantity';
-                        campo_rate = 'rate';
+                    if (recType == record.Type.INVENTORY_ADJUSTMENT) {
+                        sublista = 'inventory';
+                        campo_cantidad = 'adjustqtyby';
+                        campo_rate = 'unitcost';
 
                         //Ver si este receipt proviende de un inboundshipment
-                        var inb_ship_origen = record_now.getValue('inboundshipmentvalue');
-                        //Si este receipt proviene de un inbound shipment entonces hacer la busqueda
-                        // Si este receipt proviene directo de la orden de compra entonces generará colocará los datos de Numero de pedimento
-                        if (inb_ship_origen) {
-                            // TO DO
-                            // Añadir el caso de cuando se tiene una orden de compra mediante el envio
-                            // var inboundshipmentSearchObj = search.create({
-                            //     type: "inboundshipment",
-                            //     filters:
-                            //         [
-                            //             ["internalid", "anyof", inb_ship_origen]
-                            //         ],
-                            //     columns:
-                            //         [
-                            //             search.createColumn({ name: "custrecord_efx_ped_inb_clavesat", label: "Clave SAT" }),
-                            //             search.createColumn({ name: "custrecord_efx_ped_inb_aduana", label: "Aduana" })
-                            //         ]
-                            // });
+                        var fieldTypeMovement = record_now.getValue('custbody_efx_ped_type_movement');
+                        var fieldNoPedimento = record_now.getValue('custbody_efx_ped_no_pedimento_oc');
 
-                            // var searchResultCount = inboundshipmentSearchObj.runPaged().count;
-                            // log.debug("inboundshipmentSearchObj result count", searchResultCount);
-                            // inboundshipmentSearchObj.run().each(function (result) {
-                            //     // .run().each has a limit of 4,000 results
-                            //     payl_noPedimento = result.getValue('custrecord_efx_ped_inb_clavesat');
-                            //     payl_Aduana = result.getValue('custrecord_efx_ped_inb_aduana');
-                            //     log.audit({ title: 'Pedimento tomado del inbound shipment: ' + payl_noPedimento, details: '' });
-                            //     log.audit({ title: 'Aduana tomada del inbound shipment: ' + payl_Aduana, details: '' });
-                            //     return true;
-                            // });
+                        log.debug({ title: 'fieldTypeMovement', details: fieldTypeMovement });
+                        log.debug({ title: 'fieldNoPedimento', details: fieldNoPedimento });
 
-                            // //Si se encuentra el valor de la aduana en el inbound shipment... (Siempre deberia existir el valor)
-                            // if (payl_Aduana) {
-                            //     //Inyectar el nombre de la aduana en main body custom field
-                            //     record_now.setValue('custbody_efx_ped_rec_aduana', payl_Aduana);
-                            // } else {
-                            //     log.audit({ title: 'No se encuentra la aduana en el inboundshipment ', details: '' });
-                            // }
+                        var noLinRecNvo = record_now.getLineCount({ sublistId: sublista });
+                        noPedimento = record_now.getValue({ fieldId: 'custbody_efx_ped_no_pedimento_oc' });
+                        log.debug({title: 'noPedimento', details: noPedimento});
+                        switch (fieldTypeMovement) {
+                            case '1':
+                                //Contar cuantas lineas traeria la sublista de este recibo
 
-                            // //Inyectar valor de pedimentos a todos los items y marcar la casilla si es que trae pedimentos
+                                log.audit({ title: 'SE VA A CREAR UN INVENTORY ADJUSTMENT con este numero de lineas: ' + noLinRecNvo, details: '' });
 
-                            // if (payl_noPedimento) {
-                            //     //Contar cuantas lineas traeria la sublista de este recibo
-                            //     var noLinRecNvo = record_now.getLineCount({ sublistId: 'item' });
-
-                            //     log.audit({ title: 'SE VA A CREAR UN ITEM RECEIPT con este numero de lineas: ' + noLinRecNvo, details: '' });
-
-                            //     //Por ej, considerando 3 lineas, habria que iterar cada una, marcar la casilla de pedimento
-                            //     // y agregar el numero de pedimento
-                            //     //Recorrer los articulos del receipt y ponerles el pedimento
-                            //     for (i = 0; i < noLinRecNvo; i++) {
-                            //         var itemId = record_now.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
-                            //         var needPedim = search.lookupFields({ type: search.Type.ITEM, id: itemId, columns: ['custitem_efx_ped_contains'] });
-                            //         log.debug({ title: 'needPedim', details: needPedim });
-                            //         if (needPedim.custitem_efx_ped_contains) {
-                            //             record_now.setSublistValue({ sublistId: 'item', fieldId: 'custcol_efx_ped_numero_pedimento', line: i, value: payl_noPedimento });
-                            //             record_now.setSublistValue({ sublistId: 'item', fieldId: 'custcol_efx_ped_contains', line: i, value: true });
-                            //             validateToCreateMaster = true;
-                            //         }
-                            //     }
-                            // }
-                        } else {
-
-                            var purchaseOrdeCreatedFrom = record_now.getValue('createdfrom');
-                            var typeOrd = record_now.getValue('type');
-                            var orderType = record_now.getValue('ordertype');
-
-                            log.debug({ title: 'Tipos:', details: { typeOrd, orderType } });
-
-                            if (purchaseOrdeCreatedFrom) {
-
-                                var dataToOC = null;
-                                log.debug({ title: 'Data to search', details: { type: search.Type.PURCHASE_ORDER } });
-                                dataToOC = search.lookupFields({ type: search.Type.TRANSACTION, id: purchaseOrdeCreatedFrom, columns: ['type'] });
-                                log.debug({ title: 'dataToOC', details: dataToOC });
-
-                                var typeOrder = dataToOC.type;
-                                var noPedimento = null;
-                                if (typeOrder) {
-                                    //Contar cuantas lineas traeria la sublista de este recibo
-                                    var noLinRecNvo = record_now.getLineCount({ sublistId: 'item' });
-                                    noPedimento = record_now.getValue({ fieldId: 'custbody_efx_ped_no_pedimento_oc' });
-
-                                    log.audit({ title: 'SE VA A CREAR UN ITEM RECEIPT con este numero de lineas: ' + noLinRecNvo, details: '' });
-
-                                    //Por ej, considerando 3 lineas, habria que iterar cada una, marcar la casilla de pedimento y agregar el numero de pedimento
-                                    //Recorrer los articulos del receipt y ponerles el pedimento
-                                    for (i = 0; i < noLinRecNvo; i++) {
-                                        var pedimentoObj = {
-                                            noSerie: '',
-                                            pedimento: '',
-                                            item: '',
-                                            cantidad: '',
-                                            costo: '',
-                                            total: '',
-                                            tienePedimento: '',
-                                            ubicacion: ''
-                                        }
-
-                                        pedimentoObj.tienePedimento = record_now.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_contains', line: i }) || '';
-                                        var tipoItem = record_now.getSublistValue({ sublistId: sublista, fieldId: 'itemtype', line: i }) || '';
-                                        var itemId = record_now.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
-                                        var needPedim = search.lookupFields({ type: search.Type.ITEM, id: itemId, columns: ['custitem_efx_ped_contains'] });
-                                        log.debug({ title: 'needPedim', details: needPedim });
-                                        if (needPedim.custitem_efx_ped_contains) {
-
-                                            record_now.setSublistValue({ sublistId: 'item', fieldId: 'custcol_efx_ped_numero_pedimento', line: i, value: noPedimento });
-                                            record_now.setSublistValue({ sublistId: 'item', fieldId: 'custcol_efx_ped_contains', line: i, value: true });
-
-                                            pedimentoObj.item = record_now.getSublistValue({ sublistId: sublista, fieldId: 'item', line: i }) || '';
-                                            pedimentoObj.pedimento = record_now.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_numero_pedimento', line: i }) || '';
-                                            pedimentoObj.costo = parseFloat(record_now.getSublistValue({ sublistId: sublista, fieldId: campo_rate, line: i })) || '';
-                                            pedimentoObj.ubicacion = record_now.getSublistValue({ sublistId: sublista, fieldId: 'location', line: i }) || '';
-
-                                            var inventoryDetail = record_now.getSublistSubrecord({ sublistId: sublista, fieldId: 'inventorydetail', line: i });
-                                            var countInventoryDetail = inventoryDetail.getLineCount({ sublistId: 'inventoryassignment' });
-
-                                            var arrInvDetail = []
-                                            for (let indexInvDet = 0; indexInvDet < countInventoryDetail; indexInvDet++) {
-                                                log.debug({ title: 'inventoryDetail', details: inventoryDetail });
-                                                var invDetNum = inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'receiptinventorynumber', line: indexInvDet })
-                                                var invDetQty = inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'quantity', line: indexInvDet })
-                                                arrInvDetail.push({ invDetNum, invDetQty })
-                                            }
-                                            log.audit({ title: 'Data to Inventory Detail:', details: arrInvDetail });
-                                            if (arrInvDetail.length > 0) {
-                                                arrInvDetail.forEach(invDet => {
-                                                    var newPedObj = Object.assign({}, pedimentoObj)
-                                                    newPedObj.noSerie = invDet.invDetNum
-                                                    newPedObj.cantidad = invDet.invDetQty
-                                                    if (newPedObj.pedimento) {
-                                                        newPedObj.total = parseFloat(newPedObj.costo) * parseFloat(newPedObj.cantidad);
-                                                        array_pedimentoObj.push(newPedObj)
-                                                    }
-                                                })
-                                            } else {
-                                                pedimentoObj.total = parseFloat(pedimentoObj.costo) * parseFloat(pedimentoObj.cantidad);
-                                                pedimentoObj.cantidad = parseFloat(record_now.getSublistValue({ sublistId: sublista, fieldId: campo_cantidad, line: i })) || '';
-                                                if (pedimentoObj.pedimento) {
-                                                    array_pedimentoObj.push(pedimentoObj)
-                                                }
-                                            }
-                                            validateToCreateMaster = true
-                                        }
-                                    }
-                                }
-                            }
+                                let objAuxToGetLines = getValuesToLine(record_now, noLinRecNvo)
+                                array_pedimentoObj = objAuxToGetLines.array_pedimentoObj
+                                validateToCreateMaster = objAuxToGetLines.validateToCreateMaster
+                                break;
+                            case '2':
+                                break;
                         }
-
                         log.debug({ title: '🟢 Arreglo de objetos para generar el maestro de pedimentos', details: array_pedimentoObj });
 
                         // Si se encontro al menos un articulo que posea articulo numero de pedimento entonces buscara y actualizará
-                        if (array_pedimentoObj.length > 0) {
+                        if (array_pedimentoObj.length > 0 && false) {
                             var searchResults = searchToHistoryPed(array_pedimentoObj, ubicacionLinea, record_now);
 
                             // Update the ItemReceipt with No. Pedimento
@@ -592,6 +456,76 @@ define(['N/record', 'N/search'], (record, search) => {
         }
     }
 
+    function getValuesToLine(record_now, noLinRecNvo) {
+        try {
+            var validateToCreateMaster = false
+            var array_pedimentoObj =[];
+            //Por ej, considerando 3 lineas, habria que iterar cada una, marcar la casilla de pedimento y agregar el numero de pedimento
+            //Recorrer los articulos del receipt y ponerles el pedimento
+            for (i = 0; i < noLinRecNvo; i++) {
+                var pedimentoObj = {
+                    noSerie: '',
+                    pedimento: '',
+                    item: '',
+                    cantidad: '',
+                    costo: '',
+                    total: '',
+                    tienePedimento: '',
+                    ubicacion: ''
+                }
+
+                pedimentoObj.tienePedimento = record_now.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_contains', line: i }) || '';
+                var tipoItem = record_now.getSublistValue({ sublistId: sublista, fieldId: 'itemtype', line: i }) || '';
+                var itemId = record_now.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
+                var needPedim = search.lookupFields({ type: search.Type.ITEM, id: itemId, columns: ['custitem_efx_ped_contains'] });
+                log.debug({ title: 'needPedim', details: needPedim });
+                if (needPedim.custitem_efx_ped_contains) {
+
+                    record_now.setSublistValue({ sublistId: 'item', fieldId: 'custcol_efx_ped_numero_pedimento', line: i, value: noPedimento });
+                    record_now.setSublistValue({ sublistId: 'item', fieldId: 'custcol_efx_ped_contains', line: i, value: true });
+
+                    pedimentoObj.item = record_now.getSublistValue({ sublistId: sublista, fieldId: 'item', line: i }) || '';
+                    pedimentoObj.pedimento = record_now.getSublistValue({ sublistId: sublista, fieldId: 'custcol_efx_ped_numero_pedimento', line: i }) || '';
+                    pedimentoObj.costo = parseFloat(record_now.getSublistValue({ sublistId: sublista, fieldId: campo_rate, line: i })) || '';
+                    pedimentoObj.ubicacion = record_now.getSublistValue({ sublistId: sublista, fieldId: 'location', line: i }) || '';
+
+                    var inventoryDetail = record_now.getSublistSubrecord({ sublistId: sublista, fieldId: 'inventorydetail', line: i });
+                    var countInventoryDetail = inventoryDetail.getLineCount({ sublistId: 'inventoryassignment' });
+
+                    var arrInvDetail = []
+                    for (let indexInvDet = 0; indexInvDet < countInventoryDetail; indexInvDet++) {
+                        log.debug({ title: 'inventoryDetail', details: inventoryDetail });
+                        var invDetNum = inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'receiptinventorynumber', line: indexInvDet })
+                        var invDetQty = inventoryDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'quantity', line: indexInvDet })
+                        arrInvDetail.push({ invDetNum, invDetQty })
+                    }
+                    log.audit({ title: 'Data to Inventory Detail:', details: arrInvDetail });
+                    if (arrInvDetail.length > 0) {
+                        arrInvDetail.forEach(invDet => {
+                            var newPedObj = Object.assign({}, pedimentoObj)
+                            newPedObj.noSerie = invDet.invDetNum
+                            newPedObj.cantidad = invDet.invDetQty
+                            if (newPedObj.pedimento) {
+                                newPedObj.total = parseFloat(newPedObj.costo) * parseFloat(newPedObj.cantidad);
+                                array_pedimentoObj.push(newPedObj)
+                            }
+                        })
+                    } else {
+                        pedimentoObj.total = parseFloat(pedimentoObj.costo) * parseFloat(pedimentoObj.cantidad);
+                        pedimentoObj.cantidad = parseFloat(record_now.getSublistValue({ sublistId: sublista, fieldId: campo_cantidad, line: i })) || '';
+                        if (pedimentoObj.pedimento) {
+                            array_pedimentoObj.push(pedimentoObj)
+                        }
+                    }
+                    validateToCreateMaster = true
+                }
+            }
+            return [array_pedimentoObj, validateToCreateMaster]
+        } catch (e) {
+            log.error({ title: 'Error getvaluesToLine:', details: e });
+            return { array_pedimentoObj: [], validateToCreateMaster: false }
+        }
+    }
     function searchToHistoryPed(array_pedimentoObj, ubicacionLinea, record_now) {
         try {
             var filtros_pedimento = new Array();

@@ -29,6 +29,8 @@ define(['N/currentRecord', 'N/search', 'N/record', 'N/ui/message'],
             try {
                 console.log('Iniciando la validacion');
                 console.log(JSON.stringify(scriptContext));
+                var isNewRecord=scriptContext.currentRecord.isNew;
+
                 var objRecord = currentRecord.get();
                 console.log({ title: 'objRecord', details: JSON.stringify(objRecord) });
                 var recType = objRecord.type;
@@ -132,12 +134,12 @@ define(['N/currentRecord', 'N/search', 'N/record', 'N/ui/message'],
                         suma_cantidad = suma_cantidad + cantidad_campo;
                         //Objeto principal para la validacion de las cantidades
 
-                        // if (pedimento_campo === '') {
-                        //     noMasterPed++;
-                        //     array_items_not_ped.push(items)
-                        // } else {
-                        //     arrPed.push(pedimento_campo)
-                        // }
+                        if (pedimento_campo === '') {
+                            noMasterPed++;
+                            array_items_not_ped.push(items)
+                        } else {
+                            arrPed.push(pedimento_campo)
+                        }
                     }
                 }
 
@@ -259,7 +261,15 @@ define(['N/currentRecord', 'N/search', 'N/record', 'N/ui/message'],
                             // Si ya se tiene un pedimento tiene que hacer la validacion con respecto al que se coloco
                             let idTran = objRecord.id;
                             console.log({ title: 'Data to search:', details: { idTran, array_items, arrPed } });
-                            var resultToLine = getHistoricalMovement(idTran, array_items, arrPed)
+                            // entra validacion de array_items con el historico y cantidad disponible en Master Record
+                        // 1. obtiene historico (partiendo de array_items)
+                        // 2. obtiene el master (partiendo de array_items)
+                        // 3. tiene que actualizar o crear uno nuevo
+                        // crea uno nuevo si no encuentra un historico (crea un Historico) (siempre si existe maestro asociado al articulo y serie)
+                        // si no existe historial ni maestro, marca mensaje de error de que tal serie no tiene pedimento asociado
+                        // el historial es el conector entre transaccion y maestro de pedimentos
+                        // actualiza si está en EDIT MODE y hubo actualizacion a nivel linea (si existe el historico)
+                            var resultToLine = getHistoricalMovement(idTran, array_items, arrPed,locationLine)
                         }
                     } else {
                         // return false;
@@ -400,13 +410,15 @@ define(['N/currentRecord', 'N/search', 'N/record', 'N/ui/message'],
                         filterPed.push(["custrecord_efx_ped_numpedimento", "is", pedido], "OR")
                     }
                 })
+                // puede estar vacio idTran si fue creado por primera vez un item shipment
+                if(idTran!==''){
+                    filterPed.push('AND',["custrecord_efx_ped_related_tran", "anyof", idTran]);
+                }
                 console.log({ title: 'filterPed', details: filterPed });
                 var searchObj = search.create({
                     type: "customrecord_efx_ped_record_history",
                     filters:
                         [
-                            ["custrecord_efx_ped_related_tran", "anyof", idTran],
-                            "AND",
                             ["custrecord_efx_ped_h_item", "anyof", arrItems],
                             "AND",
                             [filterPed]
@@ -484,7 +496,7 @@ define(['N/currentRecord', 'N/search', 'N/record', 'N/ui/message'],
                         , 'AND',
                         ['custrecord_exf_ped_item', search.Operator.ANYOF, dataItem],
                         "AND",
-                        ["custrecord_exf_ped_location", "anyof", location.value]
+                        ["custrecord_efx_ped_location", "anyof", location.value]
                     ],
                     columns: [
                         search.createColumn({ name: 'internalid' }),
@@ -500,6 +512,7 @@ define(['N/currentRecord', 'N/search', 'N/record', 'N/ui/message'],
                     var noPedMaster = resultado_pedimento[x].getValue({ name: 'custrecord_efx_ped_number' }) || 'NA';
                     var cantidad_av = parseFloat(resultado_pedimento[x].getValue({ name: 'custrecord_efx_ped_available' })) || 0;
                     if (itemMaster !== 'NA' && noPedMaster !== 'NA' && cantidad_av > 0) {
+                        // completar caso de item shipment creado desde orden de venta
                         groupHist
                     }
                 }

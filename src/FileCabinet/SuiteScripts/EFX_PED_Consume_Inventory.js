@@ -51,6 +51,8 @@ define(['N/record', 'N/search'],
 
                 switch (scriptContext.type) {
                     case scriptContext.UserEventType.EDIT:
+                        // mag
+                        // falta que en Sales Order al momento de editar el inventory detail, se traiga el numero de pedimento correspondiente a la serie y actualice o deje pasar
                         break;
                     case scriptContext.UserEventType.CREATE:
                         var sublista = '';
